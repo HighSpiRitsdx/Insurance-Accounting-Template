@@ -1,9 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+// 在原有的 lucide-react 引入中，增加 MessageSquare, Send, Loader2
 import { 
   ArrowRight, BookOpen, Landmark, Activity, 
   CheckCircle2, Circle, ChevronRight, ChevronLeft,
-  PieChart, DollarSign, Target
+  PieChart, DollarSign, Target, MessageSquare, Send, Loader2
 } from 'lucide-react';
+
 
 // --- 数据模型：业务场景与会计分录 ---
 const scenarios = {
@@ -144,6 +146,50 @@ const scenarios = {
 };
 
 export default function App() {
+  const [chatOpen, setChatOpen] = useState(false);
+  const [inputMessage, setInputMessage] = useState('');
+  const [chatHistory, setChatHistory] = useState([
+    { role: 'ai', text: '你好！我是财务助手。对当前的业务场景或会计分录有疑问吗？' }
+  ]);
+  const [isTyping, setIsTyping] = useState(false);
+
+  // 发送消息的函数
+  const sendMessage = async () => {
+    if (!inputMessage.trim()) return;
+    
+    const userMsg = inputMessage;
+    setInputMessage('');
+    setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
+    setIsTyping(true);
+
+    try {
+      // 这里的 /api/chat 就是调用我们刚才写的后端文件
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMsg,
+          // 灵魂所在：把当前时间点的数据和报表余额一起发给 AI
+          context: {
+            event: currentEvent,
+            balances: balances
+          }
+        })
+      });
+
+      const data = await res.json();
+      if (data.reply) {
+        setChatHistory(prev => [...prev, { role: 'ai', text: data.reply }]);
+      } else {
+        setChatHistory(prev => [...prev, { role: 'ai', text: '抱歉，系统出现了一些错误。' }]);
+      }
+    } catch (error) {
+      setChatHistory(prev => [...prev, { role: 'ai', text: '网络请求失败，请稍后再试。' }]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+  
   const [mode, setMode] = useState('single');
   const [currentStep, setCurrentStep] = useState(0);
 
@@ -418,6 +464,54 @@ export default function App() {
 
           </div>
         </div>
+      </div>
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+        {chatOpen && (
+          <div className="bg-white border border-slate-200 shadow-xl rounded-2xl w-80 md:w-96 mb-4 overflow-hidden flex flex-col transition-all h-[450px]">
+            <div className="bg-indigo-600 text-white p-4 font-medium flex justify-between items-center">
+              <span className="flex items-center gap-2"><MessageSquare size={18}/> 场景解读助手</span>
+              <button onClick={() => setChatOpen(false)} className="text-indigo-200 hover:text-white">&times;</button>
+            </div>
+            
+            <div className="flex-1 p-4 overflow-y-auto bg-slate-50 space-y-4">
+              {chatHistory.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`p-3 rounded-2xl max-w-[85%] text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none'}`}>
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+              {isTyping && (
+                <div className="flex justify-start">
+                  <div className="p-3 bg-white border border-slate-200 rounded-2xl rounded-bl-none flex items-center gap-2 text-indigo-400">
+                    <Loader2 size={16} className="animate-spin" /> AI 思考中...
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-white border-t border-slate-100 flex gap-2">
+              <input 
+                type="text" 
+                value={inputMessage}
+                onChange={e => setInputMessage(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendMessage()}
+                placeholder="问问 AI 为什么这样记账..."
+                className="flex-1 px-3 py-2 bg-slate-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+              <button onClick={sendMessage} disabled={isTyping} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
+                <Send size={18} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        <button 
+          onClick={() => setChatOpen(!chatOpen)}
+          className="w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105"
+        >
+          <MessageSquare size={24} />
+        </button>
       </div>
     </div>
   );
