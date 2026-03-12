@@ -146,7 +146,6 @@ const scenarios = {
 };
 
 export default function App() {
-  const [chatOpen, setChatOpen] = useState(false);
   const [inputMessage, setInputMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([
     { role: 'ai', text: '你好！我是财务助手。对当前的业务场景或会计分录有疑问吗？' }
@@ -267,6 +266,55 @@ export default function App() {
             </button>
           </div>
         </header>
+        {/* --- 新增：横向嵌入式 AI 助手 --- */}
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100 flex flex-col gap-4">
+          <div className="flex items-center gap-2 text-indigo-700 font-bold text-sm px-1">
+            <MessageSquare size={18}/>
+            <span>场景解读助手 (AI 自动读取当前步骤数据)</span>
+          </div>
+
+          {/* 聊天记录区域 (固定高度，内部滚动) */}
+          <div className="h-44 overflow-y-auto bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
+            {chatHistory.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`p-2.5 px-4 rounded-2xl max-w-[85%] text-sm ${
+                  msg.role === 'user' 
+                    ? 'bg-indigo-600 text-white rounded-tr-sm shadow-sm' 
+                    : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm shadow-sm'
+                }`}>
+                  {msg.text}
+                </div>
+              </div>
+            ))}
+            {isTyping && (
+               <div className="flex justify-start">
+                 <div className="p-2.5 px-4 bg-white border border-slate-200 text-indigo-400 rounded-2xl rounded-tl-sm flex items-center gap-2 text-sm shadow-sm">
+                   <Loader2 size={16} className="animate-spin" /> AI 正在分析当期财务报表...
+                 </div>
+               </div>
+            )}
+          </div>
+
+          {/* 输入框区域 */}
+          <div className="flex gap-3">
+            <input 
+              type="text" 
+              value={inputMessage}
+              onChange={e => setInputMessage(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMessage()}
+              placeholder="输入你的问题，例如：为什么这一期 BEL 减少了？Day 1 为什么不确认利润？"
+              className="flex-1 px-4 py-2.5 bg-slate-100 border border-transparent focus:bg-white focus:border-indigo-300 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 transition-all"
+            />
+            <button 
+              onClick={sendMessage} 
+              disabled={isTyping || !inputMessage.trim()} 
+              className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all flex items-center gap-2 shadow-sm"
+            >
+              <Send size={18} /> 发送分析
+            </button>
+          </div>
+        </div>
+        {/* --- 横向 AI 助手结束 --- */
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
@@ -465,13 +513,7 @@ export default function App() {
           </div>
         </div>
       </div>
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
-        {chatOpen && (
-          <div className="bg-white border border-slate-200 shadow-xl rounded-2xl w-80 md:w-96 mb-4 overflow-hidden flex flex-col transition-all h-[450px]">
-            <div className="bg-indigo-600 text-white p-4 font-medium flex justify-between items-center">
-              <span className="flex items-center gap-2"><MessageSquare size={18}/> 场景解读助手</span>
-              <button onClick={() => setChatOpen(false)} className="text-indigo-200 hover:text-white">&times;</button>
-            </div>
+
             
             <div className="flex-1 p-4 overflow-y-auto bg-slate-50 space-y-4">
               {chatHistory.map((msg, i) => (
