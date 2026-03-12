@@ -1,11 +1,9 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-// 在原有的 lucide-react 引入中，增加 MessageSquare, Send, Loader2
+import React, { useState, useMemo } from 'react';
 import { 
   ArrowRight, BookOpen, Landmark, Activity, 
   CheckCircle2, Circle, ChevronRight, ChevronLeft,
   PieChart, DollarSign, Target, MessageSquare, Send, Loader2
 } from 'lucide-react';
-
 
 // --- 数据模型：业务场景与会计分录 ---
 const scenarios = {
@@ -146,13 +144,59 @@ const scenarios = {
 };
 
 export default function App() {
+  const [mode, setMode] = useState('single');
+  const [currentStep, setCurrentStep] = useState(0);
+
+  // AI Chatbot State
   const [inputMessage, setInputMessage] = useState('');
   const [chatHistory, setChatHistory] = useState([
-    { role: 'ai', text: '你好！我是财务助手。对当前的业务场景或会计分录有疑问吗？' }
+    { role: 'ai', text: '你好！我是 IFRS 17 财务助手。对当前的业务场景或会计分录有疑问吗？我可以结合屏幕上的数据为你解答。' }
   ]);
   const [isTyping, setIsTyping] = useState(false);
 
-  // 发送消息的函数
+  const activeData = scenarios[mode];
+  const currentEvent = activeData[currentStep];
+
+  // 计算截止当前步骤的累计余额
+  const balances = useMemo(() => {
+    const acc = {
+      cash: 0,
+      bel: 0,
+      ra: 0,
+      csm: 0,
+      revenue: 0,
+      expense: 0
+    };
+
+    for (let i = 0; i <= currentStep; i++) {
+      activeData[i].entries.forEach(entry => {
+        if (entry.acc === "现金") {
+          acc.cash += entry.type === "借" ? entry.amount : -entry.amount;
+        }
+        if (entry.acc === "保险合同负债-BEL") {
+          acc.bel += entry.type === "贷" ? entry.amount : -entry.amount;
+        }
+        if (entry.acc === "保险合同负债-RA") {
+          acc.ra += entry.type === "贷" ? entry.amount : -entry.amount;
+        }
+        if (entry.acc === "保险合同负债-CSM") {
+          acc.csm += entry.type === "贷" ? entry.amount : -entry.amount;
+        }
+        if (entry.acc === "保险服务收入") {
+          acc.revenue += entry.type === "贷" ? entry.amount : -entry.amount;
+        }
+        if (entry.acc === "保险服务费用") {
+          acc.expense += entry.type === "借" ? entry.amount : -entry.amount;
+        }
+      });
+    }
+    return acc;
+  }, [mode, currentStep, activeData]);
+
+  const totalLiability = balances.bel + balances.ra + balances.csm;
+  const netProfit = balances.revenue - balances.expense;
+
+  // 发送消息给云端 AI
   const sendMessage = async () => {
     if (!inputMessage.trim()) return;
     
@@ -162,13 +206,12 @@ export default function App() {
     setIsTyping(true);
 
     try {
-      // 这里的 /api/chat 就是调用我们刚才写的后端文件
+      // 请求 Cloudflare 的后端函数
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: userMsg,
-          // 灵魂所在：把当前时间点的数据和报表余额一起发给 AI
           context: {
             event: currentEvent,
             balances: balances
@@ -188,54 +231,6 @@ export default function App() {
       setIsTyping(false);
     }
   };
-  
-  const [mode, setMode] = useState('single');
-  const [currentStep, setCurrentStep] = useState(0);
-
-  const activeData = scenarios[mode];
-  const currentEvent = activeData[currentStep];
-
-  // 计算截止当前步骤的累计余额
-  const balances = useMemo(() => {
-    const acc = {
-      cash: 0,
-      bel: 0,
-      ra: 0,
-      csm: 0,
-      revenue: 0,
-      expense: 0
-    };
-
-    for (let i = 0; i <= currentStep; i++) {
-      activeData[i].entries.forEach(entry => {
-        // 资产类：借增贷减
-        if (entry.acc === "现金") {
-          acc.cash += entry.type === "借" ? entry.amount : -entry.amount;
-        }
-        // 负债类：贷增借减
-        if (entry.acc === "保险合同负债-BEL") {
-          acc.bel += entry.type === "贷" ? entry.amount : -entry.amount;
-        }
-        if (entry.acc === "保险合同负债-RA") {
-          acc.ra += entry.type === "贷" ? entry.amount : -entry.amount;
-        }
-        if (entry.acc === "保险合同负债-CSM") {
-          acc.csm += entry.type === "贷" ? entry.amount : -entry.amount;
-        }
-        // 损益类
-        if (entry.acc === "保险服务收入") {
-          acc.revenue += entry.type === "贷" ? entry.amount : -entry.amount;
-        }
-        if (entry.acc === "保险服务费用") {
-          acc.expense += entry.type === "借" ? entry.amount : -entry.amount;
-        }
-      });
-    }
-    return acc;
-  }, [mode, currentStep, activeData]);
-
-  const totalLiability = balances.bel + balances.ra + balances.csm;
-  const netProfit = balances.revenue - balances.expense;
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans p-6">
@@ -266,18 +261,18 @@ export default function App() {
             </button>
           </div>
         </header>
-        {/* --- 新增：横向嵌入式 AI 助手 --- */}
+
+        {/* --- 顶部横向嵌入式 AI 助手 --- */}
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-indigo-100 flex flex-col gap-4">
           <div className="flex items-center gap-2 text-indigo-700 font-bold text-sm px-1">
             <MessageSquare size={18}/>
             <span>场景解读助手 (AI 自动读取当前步骤数据)</span>
           </div>
 
-          {/* 聊天记录区域 (固定高度，内部滚动) */}
           <div className="h-44 overflow-y-auto bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
             {chatHistory.map((msg, i) => (
               <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`p-2.5 px-4 rounded-2xl max-w-[85%] text-sm ${
+                <div className={`p-2.5 px-4 rounded-2xl max-w-[85%] text-sm leading-relaxed ${
                   msg.role === 'user' 
                     ? 'bg-indigo-600 text-white rounded-tr-sm shadow-sm' 
                     : 'bg-white border border-slate-200 text-slate-700 rounded-tl-sm shadow-sm'
@@ -295,7 +290,6 @@ export default function App() {
             )}
           </div>
 
-          {/* 输入框区域 */}
           <div className="flex gap-3">
             <input 
               type="text" 
@@ -314,7 +308,7 @@ export default function App() {
             </button>
           </div>
         </div>
-        {/* --- 横向 AI 助手结束 --- */
+        {/* --- 横向 AI 助手结束 --- */}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
@@ -364,7 +358,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* 业务描述 (新增分离) */}
+              {/* 业务描述 */}
               <div className="bg-emerald-50/50 text-emerald-900 text-sm p-4 rounded-xl mb-3 leading-relaxed border border-emerald-100/50">
                 <div className="flex items-center gap-1.5 font-semibold mb-1 text-emerald-700">
                   <Target size={16} />
@@ -419,10 +413,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* 右侧：财务报表 (B/S & P&L) */}
+          {/* 右侧：财务报表 */}
           <div className="lg:col-span-4 space-y-6">
             
-            {/* 资产负债表 */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2 mb-4">
                 <Landmark className="text-purple-500" size={18}/>
@@ -430,7 +423,6 @@ export default function App() {
               </h2>
               
               <div className="space-y-4">
-                {/* Assets */}
                 <div className="bg-emerald-50/50 p-3 rounded-xl border border-emerald-100/50">
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-emerald-800 font-medium">总资产 (Assets)</span>
@@ -442,14 +434,12 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Liabilities - IFRS 17 积木 */}
                 <div className="bg-purple-50/50 p-3 rounded-xl border border-purple-100/50">
                   <div className="flex justify-between text-sm mb-2">
                     <span className="text-purple-800 font-medium">保险合同负债 (Liabilities)</span>
                     <span className="text-purple-700 font-bold">{totalLiability}</span>
                   </div>
                   
-                  {/* IFRS 17 积木拆解可视化 */}
                   <div className="space-y-1.5 mt-3">
                     <div className="flex justify-between items-center text-xs">
                       <span className="text-purple-600/80 flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-purple-300"></div> BEL (履约现金流)</span>
@@ -466,7 +456,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Equity */}
                 <div className="bg-blue-50/50 p-3 rounded-xl border border-blue-100/50">
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-blue-800 font-medium">所有者权益 (Equity)</span>
@@ -478,14 +467,12 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 试算平衡检查 */}
                 <div className={`text-xs text-center py-1 rounded ${balances.cash === totalLiability + netProfit ? 'text-emerald-500 bg-emerald-50' : 'text-red-500 bg-red-50'}`}>
                   {balances.cash === totalLiability + netProfit ? "✓ 资产 = 负债 + 权益 (试算平衡)" : "✗ 试算不平衡"}
                 </div>
               </div>
             </div>
 
-            {/* 利润表 */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
               <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2 mb-4">
                 <PieChart className="text-amber-500" size={18}/>
@@ -512,48 +499,6 @@ export default function App() {
 
           </div>
         </div>
-      </div>
-
-            
-            <div className="flex-1 p-4 overflow-y-auto bg-slate-50 space-y-4">
-              {chatHistory.map((msg, i) => (
-                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`p-3 rounded-2xl max-w-[85%] text-sm ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-700 rounded-bl-none'}`}>
-                    {msg.text}
-                  </div>
-                </div>
-              ))}
-              {isTyping && (
-                <div className="flex justify-start">
-                  <div className="p-3 bg-white border border-slate-200 rounded-2xl rounded-bl-none flex items-center gap-2 text-indigo-400">
-                    <Loader2 size={16} className="animate-spin" /> AI 思考中...
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-3 bg-white border-t border-slate-100 flex gap-2">
-              <input 
-                type="text" 
-                value={inputMessage}
-                onChange={e => setInputMessage(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && sendMessage()}
-                placeholder="问问 AI 为什么这样记账..."
-                className="flex-1 px-3 py-2 bg-slate-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-              />
-              <button onClick={sendMessage} disabled={isTyping} className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
-                <Send size={18} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        <button 
-          onClick={() => setChatOpen(!chatOpen)}
-          className="w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105"
-        >
-          <MessageSquare size={24} />
-        </button>
       </div>
     </div>
   );
