@@ -1,19 +1,15 @@
-// 这是 Cloudflare Pages Functions 的专属写法，专门处理 POST 请求
 export async function onRequestPost({ request, env }) {
   try {
-    // 1. 从 Cloudflare 的环境变量中安全获取 Key
+    // 1. 检查 API Key
     const apiKey = env.GEMINI_API_KEY;
     if (!apiKey) {
-      return new Response(JSON.stringify({ error: 'API Key 未配置' }), { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
+      return new Response(JSON.stringify({ error: '诊断结果：Cloudflare 没有读取到 GEMINI_API_KEY 环境变量，请检查环境变量设置并重新部署。' }), { 
+        status: 500, headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // 2. 解析前端发来的问题和业务场景数据
     const { message, context } = await request.json();
 
-    // 3. 组装给 Gemini 的提示词
     const prompt = `
       你是一个专业的 IFRS 17 财务与精算 AI 助手。
       用户当前正在查看以下业务场景和财务数据：
@@ -23,7 +19,7 @@ export async function onRequestPost({ request, env }) {
       用户的问题是：${message}
     `;
 
-    // 4. 安全地在云端向 Gemini 发起请求
+    // 2. 发起请求
     const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -34,19 +30,24 @@ export async function onRequestPost({ request, env }) {
 
     const data = await geminiResponse.json();
     
-    // 5. 提取回复并返回给前端
+    // 3. 增强报错：如果 Google 接口不返回 200，直接把 Google 的原话抛给前端
+    if (!geminiResponse.ok) {
+        return new Response(JSON.stringify({ error: `Google API 拒绝了请求，具体原因：${JSON.stringify(data)}` }), { 
+            status: 500, headers: { 'Content-Type': 'application/json' }
+        });
+    }
+    
+    // 4. 正常提取回复
     const reply = data.candidates[0].content.parts[0].text;
     
     return new Response(JSON.stringify({ reply }), { 
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      status: 200, headers: { 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
-    console.error(error);
-    return new Response(JSON.stringify({ error: '与 AI 通信失败' }), { 
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
+    // 5. 抓取代码本身的执行错误
+    return new Response(JSON.stringify({ error: `代码执行异常：${error.message}` }), { 
+      status: 500, headers: { 'Content-Type': 'application/json' }
     });
   }
 }
